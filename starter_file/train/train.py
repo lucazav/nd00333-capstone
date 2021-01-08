@@ -10,7 +10,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 
 import azureml.core
-from azureml.core import Workspace, Run
+from azureml.core import Workspace, Experiment, Run
 
 import joblib
 
@@ -37,12 +37,20 @@ def main():
     
     args, leftovers = parser.parse_known_args() #parser.parse_args()
 
-    run.log("bootstrap:", np.bool(args.bootstrap))
-    run.log("max_depth:", np.str("None") if np.int(args.max_depth) == -1 else np.int(args.max_depth))
-    run.log("max_features:", np.str("None") if args.max_features == "" else args.max_features)
-    run.log("min_samples_leaf:", np.int(args.min_samples_leaf))
-    run.log("min_samples_split:", np.int(args.min_samples_split))
-    run.log("n_estimators:", np.int(args.n_estimators))
+    if run.identity.startswith('OfflineRun'):
+        interactive_run.log("bootstrap:", np.str("Yes") if np.bool(args.bootstrap) else np.str("No"))
+        interactive_run.log("max_depth:", np.str("None") if np.int(args.max_depth) == -1 else np.int(args.max_depth))
+        interactive_run.log("max_features:", np.str("None") if args.max_features == "" else args.max_features)
+        interactive_run.log("min_samples_leaf:", np.int(args.min_samples_leaf))
+        interactive_run.log("min_samples_split:", np.int(args.min_samples_split))
+        interactive_run.log("n_estimators:", np.int(args.n_estimators))
+    else:
+        run.log("bootstrap:", np.str("Yes") if np.bool(args.bootstrap) else np.str("No"))
+        run.log("max_depth:", np.str("None") if np.int(args.max_depth) == -1 else np.int(args.max_depth))
+        run.log("max_features:", np.str("None") if args.max_features == "" else args.max_features)
+        run.log("min_samples_leaf:", np.int(args.min_samples_leaf))
+        run.log("min_samples_split:", np.int(args.min_samples_split))
+        run.log("n_estimators:", np.int(args.n_estimators))
 
     model = RandomForestClassifier(bootstrap=args.bootstrap,
                                    max_depth=None if np.int(args.max_depth) == -1 else np.int(args.max_depth),
@@ -56,7 +64,12 @@ def main():
     y_pred_test = model.predict(x_test)
 
     auc_weighted = roc_auc_score(y_test, y_pred_test, average="weighted")
-    run.log("AUC_weighted", np.float(auc_weighted))
+    
+    if run.identity.startswith('OfflineRun'):
+        interactive_run.log("AUC_weighted", np.float(auc_weighted))
+        interactive_run.complete()
+    else:
+        run.log("AUC_weighted", np.float(auc_weighted))
     
     # Save model as -pkl file to the outputs/ folder to use outside the script
     OUTPUT_DIR='./outputs'
@@ -78,9 +91,14 @@ from azureml.core import Dataset
 run = Run.get_context()
 
 if run.identity.startswith('OfflineRun'):
-  ws = Workspace.from_config()
+    ws = Workspace.from_config()
+    
+    experiment_name = 'heart-failure-clinical-data'
+    experiment = Experiment(ws, experiment_name)
+    
+    interactive_run = experiment.start_logging()
 else:
-  ws = run.experiment.workspace
+    ws = run.experiment.workspace
 
 
 ds = Dataset.get_by_name(ws, name='Heart Failure Prediction')
